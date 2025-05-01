@@ -10,7 +10,7 @@ import numpy as np
 class Detector(ABC):
 
     def detect_faces(self, img: Union[np.ndarray, List[np.ndarray]]
-    ) -> Union[List[FacialAreaRegion],List[List[FacialAreaRegion]]]: 
+    ) -> Union[List["FacialAreaRegion"],List[List["FacialAreaRegion"]]]: 
         """
         Detect and align face with yolo
 
@@ -35,7 +35,7 @@ class Detector(ABC):
         else:
             raise ValueError("Invalid input type. Expected numpy array or list of numpy arrays.")
     
-    def _detect_in_single_img(self, img: np.ndarray) -> List[FacialAreaRegion]:
+    def _detect_in_single_img(self, img: np.ndarray) -> List["FacialAreaRegion"]:
         """
         Helper function to detection in single image
 
