@@ -1,6 +1,6 @@
 # built-in dependencies
 import os
-from typing import List, Any
+from typing import List, Any, Union
 from enum import Enum
 
 # 3rd party dependencies
@@ -62,64 +62,78 @@ class YoloDetectorClient(Detector):
         # Return face_detector
         return YOLO(weight_file)
 
-    def detect_faces(self, img: np.ndarray) -> List[FacialAreaRegion]:
+    def detect_faces(self, img: Union[np.ndarray, List[np.ndarray]]
+    ) -> Union[List[FacialAreaRegion],List[List[FacialAreaRegion]]]:
         """
         Detect and align face with yolo
 
         Args:
-            img (np.ndarray): pre-loaded image as numpy array
+            img: Union[np.ndarray, List[np.ndarray]]: pre-loaded image as numpy array 
+            or list of images as List[np.ndarray] or batch of images as np.ndarray (N, H, W, C)
 
         Returns:
-            results (List[FacialAreaRegion]): A list of FacialAreaRegion objects
+            results Union[List[FacialAreaRegion],List[List[FacialAreaRegion]]]: A list of FacialAreaRegion objects(for single image)
+                or a list of lists of FacialAreaRegion objects(for batch of images) where each object contains:
+                - facial_area (FacialAreaRegion): The facial area region represented as x, y, w, h, left_eye,right_eye and confidence.
         """
-        resp = []
+        
+        if (not isinstance(img, list)) or (not isinstance(img, np.ndarray)):
+            raise ValueError("img must be a numpy array or a list of numpy arrays")
+        is_batch = (
+            isinstance(img, list) or img.ndim == 4
+        )
+        if not is_batch:
+            img = [img]
 
         # Detect faces
-        results = self.model.predict(
+        results_list = self.model.predict(
             img,
             verbose=False,
             show=False,
             conf=float(os.getenv("YOLO_MIN_DETECTION_CONFIDENCE", "0.25")),
-        )[0]
+        )
+        resp_list = []
+        for results in results_list:
+            resp = []
+            # For each face, extract the bounding box, the landmarks and confidence
+            for result in results:
+                if result.boxes is None:
+                    continue
 
-        # For each face, extract the bounding box, the landmarks and confidence
-        for result in results:
+                # Extract the bounding box and the confidence
+                x, y, w, h = result.boxes.xywh.tolist()[0]
+                confidence = result.boxes.conf.tolist()[0]
 
-            if result.boxes is None:
-                continue
+                right_eye = None
+                left_eye = None
 
-            # Extract the bounding box and the confidence
-            x, y, w, h = result.boxes.xywh.tolist()[0]
-            confidence = result.boxes.conf.tolist()[0]
+                # yolo-facev8 is detecting eyes through keypoints,
+                # while for v11 keypoints are always None
+                if result.keypoints is not None:
+                    # right_eye_conf = result.keypoints.conf[0][0]
+                    # left_eye_conf = result.keypoints.conf[0][1]
+                    right_eye = result.keypoints.xy[0][0].tolist()
+                    left_eye = result.keypoints.xy[0][1].tolist()
 
-            right_eye = None
-            left_eye = None
+                    # eyes are list of float, need to cast them tuple of int
+                    left_eye = tuple(int(i) for i in left_eye)
+                    right_eye = tuple(int(i) for i in right_eye)
 
-            # yolo-facev8 is detecting eyes through keypoints,
-            # while for v11 keypoints are always None
-            if result.keypoints is not None:
-                # right_eye_conf = result.keypoints.conf[0][0]
-                # left_eye_conf = result.keypoints.conf[0][1]
-                right_eye = result.keypoints.xy[0][0].tolist()
-                left_eye = result.keypoints.xy[0][1].tolist()
-
-                # eyes are list of float, need to cast them tuple of int
-                left_eye = tuple(int(i) for i in left_eye)
-                right_eye = tuple(int(i) for i in right_eye)
-
-            x, y, w, h = int(x - w / 2), int(y - h / 2), int(w), int(h)
-            facial_area = FacialAreaRegion(
-                x=x,
-                y=y,
-                w=w,
-                h=h,
-                left_eye=left_eye,
-                right_eye=right_eye,
-                confidence=confidence,
-            )
-            resp.append(facial_area)
-
-        return resp
+                x, y, w, h = int(x - w / 2), int(y - h / 2), int(w), int(h)
+                facial_area = FacialAreaRegion(
+                    x=x,
+                    y=y,
+                    w=w,
+                    h=h,
+                    left_eye=left_eye,
+                    right_eye=right_eye,
+                    confidence=confidence,
+                )
+                resp.append(facial_area)
+            resp_list.append(resp)
+        if not is_batch:
+            return resp_list[0]
+        return resp_list
 
 
 class YoloDetectorClientV8n(YoloDetectorClient):

@@ -19,7 +19,7 @@ logger = Logger()
 
 
 def extract_faces(
-    img_path: Union[str, np.ndarray, IO[bytes]],
+    img_path: Union[str, np.ndarray, IO[bytes], List[Union[str, np.ndarray, IO[bytes]]]],
     detector_backend: str = "opencv",
     enforce_detection: bool = True,
     align: bool = True,
@@ -31,10 +31,11 @@ def extract_faces(
     max_faces: Optional[int] = None,
 ) -> List[Dict[str, Any]]:
     """
-    Extract faces from a given image
+    Extract faces from the given image or list of images
 
     Args:
-        img_path (str or np.ndarray or IO[bytes]): Path to the first image. Accepts exact image path
+        img_path (str or np.ndarray or IO[bytes] or List[str or np.ndarray or IO[bytes]]): Path(s) to the image(s). 
+            Accepts exact image path
             as a string, numpy array (BGR), a file object that supports at least `.read` and is
             opened in binary mode, or base64 encoded images.
 
@@ -61,7 +62,8 @@ def extract_faces(
         anti_spoofing (boolean): Flag to enable anti spoofing (default is False).
 
     Returns:
-        results (List[Dict[str, Any]]): A list of dictionaries, where each dictionary contains:
+        results (List[Dict[str, Any]] or List[List[Dict[str, Any]]]): A list of dictionaries or a list of lists of dictionaries 
+        where each dictionary contains:
 
         - "face" (np.ndarray): The detected face as a NumPy array in RGB format.
 
@@ -79,30 +81,92 @@ def extract_faces(
         - "antispoof_score" (float): score of antispoofing analyze result. this key is
             just available in the result only if anti_spoofing is set to True in input arguments.
     """
+    is_batch = (
+        isinstance(img_path, list) 
+        or
+        (
+            isinstance(img_path, np.ndarray)
+            and img_path.ndim == 4
+        )
+    )
+    if not is_batch:
+        imgs_path = [img_path]
+    else:
+        imgs_path = img_path
 
-    resp_objs = []
+    images_list = []
+    img_name_list = []
+    base_region_list = []
+    img_shape_list = [] # list of tuples (height, width)
+    for img_path in imgs_path:
+        # img might be path, base64 or numpy array. Convert it to numpy whatever it is.
+        img, img_name = image_utils.load_image(img_path)
 
-    # img might be path, base64 or numpy array. Convert it to numpy whatever it is.
-    img, img_name = image_utils.load_image(img_path)
+        if img is None:
+            raise ValueError(f"Exception while loading {img_name}")
 
-    if img is None:
-        raise ValueError(f"Exception while loading {img_name}")
+        height, width, _ = img.shape
 
-    height, width, _ = img.shape
+        base_region = FacialAreaRegion(x=0, y=0, w=width, h=height, confidence=0)
 
-    base_region = FacialAreaRegion(x=0, y=0, w=width, h=height, confidence=0)
+        images_list.append(img)
+        img_name_list.append(img_name)
+        base_region_list.append(base_region)
+        img_shape_list.append((height, width))
 
     if detector_backend == "skip":
-        face_objs = [DetectedFace(img=img, facial_area=base_region, confidence=0)]
+        face_objs_list = [
+            [DetectedFace(img=img, facial_area=base_region, confidence=0)] 
+                      for img,base_region in zip(images_list, base_region_list)
+                      ]
     else:
-        face_objs = detect_faces(
+        face_objs_list = detect_faces( # return list of lists of DetectedFace objects as batch input is given
             detector_backend=detector_backend,
-            img=img,
+            img=images_list,
             align=align,
             expand_percentage=expand_percentage,
             max_faces=max_faces,
         )
+    # convert detected faces to a list of dictionaries
+    resp_objs_list = []
+    for face_objs, img, img_name, base_region, img_shape in zip(
+        face_objs_list, images_list, img_name_list, base_region_list, img_shape_list
+    ):
+        resp_objs = extract_results(
+            face_objs=face_objs,
+            img=img,
+            img_name=img_name,
+            base_region=base_region,
+            img_shape=img_shape,
+            enforce_detection=enforce_detection,
+            grayscale=grayscale,
+            color_face=color_face,
+            normalize_face=normalize_face,
+            anti_spoofing=anti_spoofing,
+        )
+        resp_objs_list.append(resp_objs)
+    
+    if not is_batch:
+        resp_objs_list = resp_objs_list[0]
+    return resp_objs_list
 
+    
+    
+def extract_results(
+    face_objs: List[DetectedFace],
+    img: np.ndarray,
+    img_name: str,
+    base_region: FacialAreaRegion,
+    img_shape: Tuple[int, int],
+    enforce_detection: bool = True,
+    grayscale: bool = False,
+    color_face: str = "rgb",
+    normalize_face: bool = True,
+    anti_spoofing: bool = False,
+) -> List[Dict[str, Any]]:
+    """
+    Helper function to convert detected faces to a list of dictionaries.
+    """
     # in case of no face found
     if len(face_objs) == 0 and enforce_detection is True:
         if img_name is not None:
@@ -116,7 +180,8 @@ def extract_faces(
                 "Face could not be detected. Please confirm that the picture is a face photo "
                 "or consider to set enforce_detection param to False."
             )
-
+    height, width = img_shape
+    resp_objs = []
     if len(face_objs) == 0 and enforce_detection is False:
         face_objs = [DetectedFace(img=img, facial_area=base_region, confidence=0)]
 
@@ -191,24 +256,25 @@ def extract_faces(
 
 def detect_faces(
     detector_backend: str,
-    img: np.ndarray,
+    img: Union[np.ndarray, List[np.ndarray]],
     align: bool = True,
     expand_percentage: int = 0,
     max_faces: Optional[int] = None,
-) -> List[DetectedFace]:
+) -> Union[List[DetectedFace], List[List[DetectedFace]]]:
     """
     Detect face(s) from a given image
     Args:
         detector_backend (str): detector name
 
-        img (np.ndarray): pre-loaded image
+        img (np.ndarray or List(np.ndarray)): pre-loaded image or list of images as numpy array
+            or batch of images as np.ndarray (N, H, W, C)
 
         align (bool): enable or disable alignment after detection
 
         expand_percentage (int): expand detected facial area with a percentage (default is 0).
 
     Returns:
-        results (List[DetectedFace]): A list of DetectedFace objects
+        results (List[DetectedFace] or List[List[DetectedFace]]): A list of DetectedFace objects or a list of lists of DetectedFace objects
             where each object contains:
 
         - img (np.ndarray): The detected face as a NumPy array.
@@ -219,7 +285,17 @@ def detect_faces(
 
         - confidence (float): The confidence score associated with the detected face.
     """
-    height, width, _ = img.shape
+    is_batch = (
+        isinstance(img, list) 
+        or
+        (
+            isinstance(img, np.ndarray)
+            and img.ndim == 4
+        )
+    )
+    if not is_batch:
+        img = [img]
+    # height, width, _ = img.shape
     face_detector: Detector = modeling.build_model(
         task="face_detector", model_name=detector_backend
     )
@@ -234,38 +310,48 @@ def detect_faces(
 
     # If faces are close to the upper boundary, alignment move them outside
     # Add a black border around an image to avoid this.
-    height_border = int(0.5 * height)
-    width_border = int(0.5 * width)
+    
     if align is True:
-        img = cv2.copyMakeBorder(
-            img,
-            height_border,
-            height_border,
-            width_border,
-            width_border,
-            cv2.BORDER_CONSTANT,
-            value=[0, 0, 0],  # Color of the border (black)
-        )
+        img_list = []
+        for single_img in img:
+            height, width, _ = single_img.shape
+            height_border = int(0.5 * height)
+            width_border = int(0.5 * width)
+            single_img = cv2.copyMakeBorder(
+                single_img,
+                height_border,
+                height_border,
+                width_border,
+                width_border,
+                cv2.BORDER_CONSTANT,
+                value=[0, 0, 0],  # Color of the border (black)
+            )
+            img_list.append(single_img)
+        img = img_list
 
-    # find facial areas of given image
-    facial_areas = face_detector.detect_faces(img)
-
-    if max_faces is not None and max_faces < len(facial_areas):
-        facial_areas = nlargest(
-            max_faces, facial_areas, key=lambda facial_area: facial_area.w * facial_area.h
-        )
-
-    return [
-        extract_face(
-            facial_area=facial_area,
-            img=img,
-            align=align,
-            expand_percentage=expand_percentage,
-            width_border=width_border,
-            height_border=height_border,
-        )
-        for facial_area in facial_areas
-    ]
+    # find facial areas of given images
+    facial_areas_list = face_detector.detect_faces(img)
+    detect_faces_list = []
+    for i,facial_areas in enumerate(facial_areas_list):
+        if max_faces is not None and max_faces < len(facial_areas):
+            facial_areas = nlargest(
+                max_faces, facial_areas, key=lambda facial_area: facial_area.w * facial_area.h
+            )
+        detected_faces = [
+            extract_face(
+                facial_area=facial_area,
+                img=img[i],
+                align=align,
+                expand_percentage=expand_percentage,
+                width_border=width_border,
+                height_border=height_border,
+            )
+            for facial_area in facial_areas
+        ]
+        detect_faces_list.append(detected_faces)
+    if not is_batch:
+        return detect_faces_list[0]
+    return detect_faces_list
 
 
 def extract_face(

@@ -1,5 +1,5 @@
 # built-in dependencies
-from typing import List
+from typing import List,Union
 
 # 3rd party dependencies
 import numpy as np
@@ -47,9 +47,9 @@ class DlibClient(Detector):
         detector["sp"] = sp
         return detector
 
-    def detect_faces(self, img: np.ndarray) -> List[FacialAreaRegion]:
+    def _detect_in_single_img(self, img: np.ndarray) -> List[FacialAreaRegion]:
         """
-        Detect and align face with dlib
+        Helper function to detection in single image
 
         Args:
             img (np.ndarray): pre-loaded image as numpy array

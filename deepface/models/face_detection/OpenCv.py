@@ -29,9 +29,10 @@ class OpenCvClient(Detector):
         detector["eye_detector"] = self.__build_cascade("haarcascade_eye")
         return detector
 
-    def detect_faces(self, img: np.ndarray) -> List[FacialAreaRegion]:
+    def _detect_in_single_img(self, img: np.ndarray) -> List[FacialAreaRegion]:
         """
-        Detect and align face with opencv
+        Helper function to detection in single image
+        Detect and align face with opencv       
 
         Args:
             img (np.ndarray): pre-loaded image as numpy array

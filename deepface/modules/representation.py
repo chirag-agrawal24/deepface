@@ -84,22 +84,25 @@ def represent(
 
     batch_images, batch_regions, batch_confidences, batch_indexes = [], [], [], []
 
-    for idx, single_img_path in enumerate(images):
-        # we have run pre-process in verification. so, skip if it is coming from verify.
-        target_size = model.input_shape
-        if detector_backend != "skip":
-            # Images are returned in RGB format.
-            img_objs = detection.extract_faces(
-                img_path=single_img_path,
-                detector_backend=detector_backend,
-                grayscale=False,
-                enforce_detection=enforce_detection,
-                align=align,
-                expand_percentage=expand_percentage,
-                anti_spoofing=anti_spoofing,
-                max_faces=max_faces,
-            )
-        else:  # skip
+    
+    # we have run pre-process in verification. so, skip if it is coming from verify.
+    target_size = model.input_shape
+    if detector_backend != "skip":
+        # Images are returned in RGB format.
+        img_objs_list = detection.extract_faces(
+            img_path=single_img_path,
+            detector_backend=detector_backend,
+            grayscale=False,
+            enforce_detection=enforce_detection,
+            align=align,
+            expand_percentage=expand_percentage,
+            anti_spoofing=anti_spoofing,
+            max_faces=max_faces,
+        )
+    
+    else:  # skip
+        img_objs_list = []
+        for idx, single_img_path in enumerate(images):    
             # Try load. If load error, will raise exception internal
             img, _ = image_utils.load_image(single_img_path)
 
@@ -117,8 +120,9 @@ def represent(
                     "confidence": 0,
                 }
             ]
+            img_objs_list.append(img_objs)
         # ---------------------------------
-
+    for idx, img_objs in enumerate(img_objs_list):
         if max_faces is not None and max_faces < len(img_objs):
             # sort as largest facial areas come first
             img_objs = sorted(
