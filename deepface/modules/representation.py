@@ -90,7 +90,7 @@ def represent(
     if detector_backend != "skip":
         # Images are returned in RGB format.
         img_objs_list = detection.extract_faces(
-            img_path=single_img_path,
+            img_path=images,
             detector_backend=detector_backend,
             grayscale=False,
             enforce_detection=enforce_detection,

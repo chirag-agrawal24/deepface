@@ -77,7 +77,7 @@ class YoloDetectorClient(Detector):
                 - facial_area (FacialAreaRegion): The facial area region represented as x, y, w, h, left_eye,right_eye and confidence.
         """
         
-        if (not isinstance(img, list)) or (not isinstance(img, np.ndarray)):
+        if (not isinstance(img, list)) and (not isinstance(img, np.ndarray)):
             raise ValueError("img must be a numpy array or a list of numpy arrays")
         is_batch = (
             isinstance(img, list) or img.ndim == 4

@@ -343,8 +343,6 @@ def detect_faces(
                 img=img[i],
                 align=align,
                 expand_percentage=expand_percentage,
-                width_border=width_border,
-                height_border=height_border,
             )
             for facial_area in facial_areas
         ]
@@ -359,8 +357,6 @@ def extract_face(
     img: np.ndarray,
     align: bool,
     expand_percentage: int,
-    width_border: int,
-    height_border: int,
 ) -> DetectedFace:
     x = facial_area.x
     y = facial_area.y
@@ -372,6 +368,9 @@ def extract_face(
     nose = facial_area.nose
     mouth_left = facial_area.mouth_left
     mouth_right = facial_area.mouth_right
+    height, width, _ = img.shape
+    height_border = int(0.5 * height)
+    width_border = int(0.5 * width)
 
     if expand_percentage > 0:
         # Expand the facial region height and width by the provided percentage
