@@ -5,7 +5,7 @@ import logging
 from typing import Any, Dict, IO, List, Union, Optional, Sequence
 
 # this has to be set before importing tensorflow
-os.environ["TF_USE_LEGACY_KERAS"] = "1"
+# os.environ["TF_USE_LEGACY_KERAS"] = "1"
 
 # pylint: disable=wrong-import-position
 
